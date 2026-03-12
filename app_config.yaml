@@ -1,0 +1,12 @@
+dataset:
+  root_dir: /data
+  masks_dir: masks
+  generated_dir: generated
+  trash_dir: .trash
+  mask_regex: '^(?P<group_key>.+)_mask\.(png|jpg|jpeg|webp)$'
+  generated_regex: '^(?P<group_key>.+)_gen_[0-9]+\.(png|jpg|jpeg|webp)$'
+  allowed_extensions:
+    - .png
+    - .jpg
+    - .jpeg
+    - .webp

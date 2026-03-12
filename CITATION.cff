@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+title: Dataset Review and Verification Web Application
+authors:
+  - family-names: Sankaran
+    given-names: Swaminathan
+    affiliation: University at Buffalo
+date-released: 2026
+version: 1.0
+message: "If you use this software, please cite it as below."
