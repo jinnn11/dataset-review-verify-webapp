@@ -93,6 +93,64 @@ docker compose up -d --build
 Important:
 - Login/session cookie is configured as `Secure`, so use HTTPS (not plain HTTP).
 
+## Run (Gradio, No Docker / No sudo)
+Use this path when you cannot run Docker on the server.
+
+1. Start with the launcher script:
+
+```bash
+chmod +x gradio/run_gradio.sh
+./gradio/run_gradio.sh
+```
+
+2. Open:
+- Gradio prints a local URL and a public share URL (`*.gradio.live`) when `GRADIO_SHARE=true` (default).
+- Main review UI path remains `/app` on that same host.
+- Gradio panel path:
+  - `/` in share mode (default)
+  - `/gradio` when `GRADIO_SHARE=false`
+
+Notes:
+- This keeps the existing React UI/features (no UI rewrite).
+- API stays available at `/api/v1/*`.
+- Non-Docker defaults are applied automatically (SQLite in `data/review.db`, local dataset root, HTTP-safe cookie settings).
+- See `gradio/README.md` for details.
+- Disable share-link mode when needed:
+
+```bash
+GRADIO_SHARE=false ./gradio/run_gradio.sh
+```
+
+### Gradio Server Deployment Steps
+Use these steps when deploying to a remote server without sudo/docker.
+
+1. Copy project to server and place dataset in `data/masks` and `data/generated`.
+2. Set `.env` (at minimum: `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ENABLE_SOFT_DELETE`).
+3. Ensure `frontend/dist` exists:
+- If server has Node/npm, `run_gradio.sh` can build automatically when missing.
+- If server has no npm, build `frontend/dist` on another machine and copy that folder to server.
+4. Start service:
+
+```bash
+cd <repo-root>
+chmod +x gradio/run_gradio.sh
+nohup ./gradio/run_gradio.sh > gradio.log 2>&1 &
+```
+
+5. Verify:
+
+```bash
+curl -I http://127.0.0.1:7860/
+curl -I http://127.0.0.1:7860/app
+curl -I http://127.0.0.1:7860/api/v1/auth/me
+```
+
+### Gradio Auto Public Link Notes
+- Auto public link works only in Gradio `share=True` mode (enabled by default in `gradio/run_gradio.sh`).
+- Share links are temporary (typically expire after about one week).
+- If the share link does not appear, outbound internet/tunnel connectivity from server is blocked.
+- For long-term stable production URLs, use a domain + reverse proxy.
+
 ## API Endpoints (Current)
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/logout`
@@ -132,6 +190,10 @@ If you want to rerun the same dataset scenario repeatedly:
 ```bash
 ./infra/scripts/restore-test-baseline.sh
 ```
+
+Note: this script now supports both modes automatically:
+- Docker mode (uses running `backend` container if available)
+- Gradio/non-Docker mode (uses local Python + SQLite/postgres from `.env`)
 
 ## Repository Layout
 - `backend/` FastAPI app and tests

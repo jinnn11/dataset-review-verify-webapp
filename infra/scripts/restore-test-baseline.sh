@@ -24,25 +24,27 @@ mkdir -p "$TRASH_DST"
 echo "Restored dataset files from baseline."
 
 echo "Resetting DB review/deletion state..."
-if ! docker compose ps --services --filter status=running | grep -q '^backend$'; then
-  echo "Backend is not running. Start services first: docker compose up -d --build"
-  exit 1
-fi
 
-docker compose exec -T backend python - <<'PY'
-from sqlalchemy import text
-
+RESET_PYTHON_CODE="$(cat <<'PY'
 from app.core.config import get_dataset_config
+from app.db.init_db import init_db
 from app.db.session import SessionLocal
-from app.models.generated_image import GeneratedImage, ImageStatus
+from app.models.deletion_operation import DeletionOperation
+from app.models.generated_image import GeneratedImage
+from app.models.ingestion_run import IngestionRun
+from app.models.mask_group import MaskGroup
+from app.models.review_decision import ReviewDecision
 from app.services.ingestion import run_ingestion
 
+init_db()
 db = SessionLocal()
 try:
-    db.execute(text("TRUNCATE TABLE review_decisions RESTART IDENTITY CASCADE"))
-    db.execute(text("TRUNCATE TABLE deletion_operations RESTART IDENTITY CASCADE"))
-    db.execute(text("TRUNCATE TABLE ingestion_runs RESTART IDENTITY CASCADE"))
-    db.query(GeneratedImage).update({GeneratedImage.status: ImageStatus.active}, synchronize_session=False)
+    # Full review-state reset so ingest starts from clean baseline data on disk.
+    db.query(ReviewDecision).delete(synchronize_session=False)
+    db.query(DeletionOperation).delete(synchronize_session=False)
+    db.query(IngestionRun).delete(synchronize_session=False)
+    db.query(GeneratedImage).delete(synchronize_session=False)
+    db.query(MaskGroup).delete(synchronize_session=False)
     db.commit()
 
     run = run_ingestion(db, get_dataset_config())
@@ -50,5 +52,39 @@ try:
 finally:
     db.close()
 PY
+)"
+
+if command -v docker >/dev/null 2>&1 && docker compose ps --services --filter status=running 2>/dev/null | grep -q '^backend$'; then
+  docker compose exec -T backend python - <<PY
+$RESET_PYTHON_CODE
+PY
+else
+  echo "Docker backend not running; using local reset path (Gradio/non-Docker)."
+
+  if [[ -f "$ROOT_DIR/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ROOT_DIR/.env"
+    set +a
+  fi
+
+  export APP_CONFIG_PATH="${APP_CONFIG_PATH:-$ROOT_DIR/app_config.yaml}"
+  export DATASET_ROOT_DIR="${DATASET_ROOT_DIR:-$DATA_DIR}"
+  export DATABASE_URL="${DATABASE_URL:-sqlite:///$DATA_DIR/review.db}"
+  export SESSION_COOKIE_SECURE="${SESSION_COOKIE_SECURE:-false}"
+
+  LOCAL_PYTHON="$ROOT_DIR/.venv-gradio/bin/python"
+  if [[ ! -x "$LOCAL_PYTHON" ]]; then
+    LOCAL_PYTHON="$(command -v python3 || true)"
+  fi
+  if [[ -z "$LOCAL_PYTHON" ]]; then
+    echo "Python not found. Create .venv-gradio or install python3 first."
+    exit 1
+  fi
+
+  PYTHONPATH="$ROOT_DIR/backend" "$LOCAL_PYTHON" - <<PY
+$RESET_PYTHON_CODE
+PY
+fi
 
 echo "Testing state restored. Reload the web app."
